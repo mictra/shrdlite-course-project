@@ -107,93 +107,213 @@ module Interpreter {
      */
     function interpretCommand(cmd: Parser.Command, state: WorldState): DNFFormula {
 
-        var objects: string[] = Array.prototype.concat.apply([], state.stacks);
-        var objs: { [s: string]: ObjectDefinition } = state.objects;
-        var objDefs: ObjectDefinition[] = [];
-        // Retrieve the ObjectDefinition of the objects in the stacks 
-        for (var i = 0; i < objects.length; i++) {
-            objDefs.push(objs[objects[i]]);
+        /**
+         * Function that returns an array of valid object identifiers,
+         * given an entity. Takes relative clauses into account (if there are any).
+         */
+        function getValidObjectIds(entity: Parser.Entity): string[] {
+            var objIds: string[] = [];
+            var obj: Parser.Object = entity.object;
+            var hasRelativeObj: boolean = false;
+            var relativeObjLoc: Parser.Location = null;
+
+            // Checks if object has relative clause
+            if (obj.object != undefined) {
+                relativeObjLoc = obj.location;
+                obj = obj.object;
+                hasRelativeObj = true;
+            }
+
+            // Return array with the only object id as element
+            if (obj.form == "floor") {
+                objIds.push(obj.form);
+                return objIds;
+            }
+
+            var anyForm: boolean = obj.form == "anyform";
+            var anyColor: boolean = obj.color == null;
+            var anySize: boolean = obj.size == null;
+
+            for (var i = 0; i < state.stacks.length; i++) {
+                for (var j = 0; j < state.stacks[i].length; j++) {
+
+                    var objId: string = state.stacks[i][j];
+                    var objDef: ObjectDefinition = state.objects[objId];
+
+                    if (!anyForm && objDef.form != obj.form) {
+                        continue;
+                    }
+                    if (!anyColor && objDef.color != obj.color) {
+                        continue;
+                    }
+                    if (!anySize && objDef.size != obj.size) {
+                        continue;
+                    }
+
+                    // Checks the spatial relations, if there's a relative clause
+                    if (hasRelativeObj) {
+                        var relatives: string[] = getValidObjectIds(relativeObjLoc.entity);
+                        // Self-note: The "above" and "under" relation is not yet implemented, might want it for the final version?
+                        switch (relativeObjLoc.relation) {
+                            case "leftof":
+                                if (!isXOf(relatives, i - 1)) {
+                                    continue;
+                                }
+                                break;
+                            case "rightof":
+                                if (!isXOf(relatives, i + 1)) {
+                                    continue;
+                                }
+                                break;
+                            case "inside":
+                                if (!isInsideOnTop(relatives, i, j - 1)) {
+                                    continue;
+                                }
+                                break;
+                            case "beside":
+                                if (!(isXOf(relatives, i - 1) || isXOf(relatives, i + 1))) {
+                                    continue;
+                                }
+                                break;
+                            case "ontop":
+                                if (!isInsideOnTop(relatives, i, j - 1)) {
+                                    continue;
+                                }
+                                break;
+                        }
+                    }
+
+                    objIds.push(objId);
+                }
+            }
+
+            return objIds;
         }
 
-        // Identify different ObjectDefinitions command is referring to
-        var scopeObjs: ObjectDefinition[] = [];
+        /**
+         * Helper function, returns true if any object identifiers
+         * from the array is X (left or right) of the stack.
+         * 
+         */
+        function isXOf(objIds: string[], i: number): boolean {
+            if (i >= 0) {
+                for (var n = 0; n < objIds.length; n++) {
+                    for (var j = 0; j < state.stacks[i].length; j++) {
+                        if (objIds[n] == state.stacks[i][j]) {
+                            return true;
+                        }
+                    }
+                }
+            }
 
-        // Objects the parser command is referring to
-        var parserObjs: Parser.Object[] = [];
+            return false;
+        }
+
+        /**
+         * Helper function, returns true if any object identifiers
+         * from the array is directly under it in the same stack.
+         */
+        function isInsideOnTop(objIds: string[], i: number, j: number): boolean {
+            // If ontop of floor is being checked, then it has to be at the bottom of the stack
+            if (objIds[0] == "floor" && j < 0) {
+                return true;
+            }
+
+            if (i >= 0 && j >= 0) {
+                for (var n = 0; n < objIds.length; n++) {
+                    if (objIds[n] == state.stacks[i][j]) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Checks if the possible goal is valid, given two object identifiers and their relation.
+         * Returns a boolean according to the physical laws given for the placement and movements of objects.
+         * NOTE: Not all physical laws are being considered at the moment.
+         */
+        function isValidGoal(relation: string, aObj: string, bObj: string): boolean {
+            // Can not be the same object (can not have relation to itself)
+            if (aObj == bObj) {
+                return false;
+            }
+
+            // Valid only if it is ontop or above the floor
+            if (bObj == "floor" && (relation == "ontop" || relation == "above")) {
+                return true;
+            }
+
+            var cmdObj: ObjectDefinition = state.objects[aObj];
+            var locObj: ObjectDefinition = state.objects[bObj];
+
+            switch (relation) {
+                case "inside":
+                    if ((cmdObj.size == "large" && locObj.size == "small") ||
+                        locObj.form != "box" ||
+                        ((cmdObj.form == "pyramid" || cmdObj.form == "plank" || cmdObj.form == "box") &&
+                            cmdObj.size == locObj.size)) {
+                        return false;
+                    }
+                    break;
+                case "ontop":
+                    if ((cmdObj.form == "ball" && !(locObj.form == "floor")) ||
+                        locObj.form == "ball" ||
+                        (cmdObj.size == "large" && locObj.size == "small")) {
+                        return false;
+                    }
+                    break;
+            }
+
+            return true;
+        }
+
         var cmdEntity: Parser.Entity = cmd.entity;
         var cmdLoc: Parser.Location = cmd.location;
 
+        var cmdDefs: string[] = [];
+        var locDefs: string[] = [];
+
         if (cmdEntity != null) {
-            var entityObj: Parser.Object = cmdEntity.object;
-            if (entityObj.object != undefined) {
-                // The relative location, might need to save it later?
-                var relLoc: Parser.Location = entityObj.location;
-                parserObjs.push(relLoc.entity.object);
-                entityObj = entityObj.object;
-            }
-            parserObjs.push(entityObj);
+            cmdDefs = getValidObjectIds(cmdEntity);
         }
 
         if (cmdLoc != null) {
-            var entityObj: Parser.Object = cmdLoc.entity.object;
-            if (entityObj.object != undefined) {
-                // The relative location, might need to save it later?
-                var relLoc: Parser.Location = entityObj.location;
-                parserObjs.push(relLoc.entity.object);
-                entityObj = entityObj.object;
-            }
-            parserObjs.push(entityObj);
+            locDefs = getValidObjectIds(cmdLoc.entity);
         }
 
-        var anyForm: boolean = cmd.entity.object.form == "anyform";
-        var anyColor: boolean = cmd.entity.object.color == null;
-        var anySize: boolean = cmd.entity.object.size == null;
+        var interpretation: DNFFormula = [];
+        var relation: string;
 
-        for (var i = 0; i < objDefs.length; i++) {
-            if (!anyForm) {
-                if (cmd.entity.object.form == objDefs[i].form) {
-                    scopeObjs.push(objDefs[i]);
+        if (cmd.command == "take") {
+            relation = "holding";
+        } else if (cmd.command == "move" && cmdLoc != null) {
+            relation = cmdLoc.relation;
+        }
+
+        // Construct the goal interpretations/literals given the relation and object identifiers
+        if (relation == "holding") {
+            for (var i = 0; i < cmdDefs.length; i++) {
+                interpretation.push([{ polarity: true, relation: relation, args: [cmdDefs[i]] }]);
+            }
+        } else if (cmdLoc != null) {
+            for (var i = 0; i < cmdDefs.length; i++) {
+                for (var j = 0; j < locDefs.length; j++) {
+                    if (isValidGoal(relation, cmdDefs[i], locDefs[j])) {
+                        interpretation.push([{ polarity: true, relation: relation, args: [cmdDefs[i], locDefs[j]] }]);
+                    }
                 }
-            } else {
-                scopeObjs.push(objDefs[i]);
-            }
-        }
-        for (var i = 0; i < scopeObjs.length; i++) {
-            if (!anyColor) {
-                if (!(cmd.entity.object.color == scopeObjs[i].color)) {
-                    scopeObjs.splice(i, 1);
-                    i--;
-                }
-            }
-        }
-        for (var i = 0; i < scopeObjs.length; i++) {
-            if (!anySize) {
-                if (!(cmd.entity.object.size == scopeObjs[i].size)) {
-                    scopeObjs.splice(i, 1);
-                    i--;
-                }
+
             }
         }
 
-        console.log("Command form: " + cmd.entity.object.form);
-        console.log("Command size: " + cmd.entity.object.size);
-        console.log("Command color: " + cmd.entity.object.color);
-        console.log("FORM, SIZE, COLOR: " + anyForm + ", " + anySize + ", " + anyColor);
-        console.log("Size of scope: " + scopeObjs.length);
-        console.log("Size of parser objects: " + parserObjs.length);
-
-        for (var i = 0; i < parserObjs.length; i++) {
-            console.log("Form: " + scopeObjs[i].form);
+        // No valid interpretations was found
+        if (interpretation.length == 0) {
+            throw Error;
         }
 
-
-
-        var a: string = objects[Math.floor(Math.random() * objects.length)];
-        var b: string = objects[Math.floor(Math.random() * objects.length)];
-        var interpretation: DNFFormula = [[
-            { polarity: true, relation: "ontop", args: [a, "floor"] },
-            { polarity: true, relation: "holding", args: [b] }
-        ]];
         return interpretation;
     }
 
