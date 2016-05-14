@@ -153,7 +153,6 @@ module Interpreter {
                     // Checks the spatial relations, if there's a relative clause
                     if (hasRelativeObj) {
                         var relatives: string[] = getValidObjectIds(relativeObjLoc.entity);
-                        // Self-note: The "above" and "under" relation is not yet implemented, might want it for the final version?
                         switch (relativeObjLoc.relation) {
                             case "leftof":
                                 if (!isXOf(relatives, i - 1)) {
@@ -177,6 +176,16 @@ module Interpreter {
                                 break;
                             case "ontop":
                                 if (!isInsideOnTop(relatives, i, j - 1)) {
+                                    continue;
+                                }
+                                break;
+                            case "above":
+                                if (!isAbove(relatives, i, j)) {
+                                    continue;
+                                }
+                                break;
+                            case "under":
+                                if (!isUnder(relatives, i, j + 1)) {
                                     continue;
                                 }
                                 break;
@@ -231,9 +240,50 @@ module Interpreter {
         }
 
         /**
+         * Helper function, returns true if any object identifiers
+         * from the array is somewhere under the "commanded" object in the stack.
+         */
+        function isAbove(objIds: string[], i: number, j: number): boolean {
+            // Every object is above the floor (except the floor itself)
+            if (objIds[0] == "floor") {
+                return true;
+            }
+
+            for (var n = 0; n < objIds.length; n++) {
+                for (var k = 0; k < j; k++) {
+                    if (objIds[n] == state.stacks[i][k]) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Helper function, returns true if any object identifiers
+         * from the array is somewhere above the "commanded" object in the stack.
+         */
+        function isUnder(objIds: string[], i: number, j: number): boolean {
+            // Object can not be under the floor
+            if (objIds[0] == "floor") {
+                return false;
+            }
+
+            for (var n = 0; n < objIds.length; n++) {
+                for (var k = j; k < state.stacks[i].length; k++) {
+                    if (objIds[n] == state.stacks[i][k]) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
          * Checks if the possible goal is valid, given two object identifiers and their relation.
          * Returns a boolean according to the physical laws given for the placement and movements of objects.
-         * NOTE: Not all physical laws are being considered at the moment.
          */
         function isValidGoal(relation: string, aObj: string, bObj: string): boolean {
             // Can not be the same object (can not have relation to itself)
@@ -259,9 +309,14 @@ module Interpreter {
                     }
                     break;
                 case "ontop":
-                    if ((cmdObj.form == "ball" && !(locObj.form == "floor")) ||
+                case "above":
+                    if ((cmdObj.form == "ball" && !(locObj.form == "floor") && relation == "ontop") ||
                         locObj.form == "ball" ||
-                        (cmdObj.size == "large" && locObj.size == "small")) {
+                        (cmdObj.size == "large" && locObj.size == "small") ||
+                        (cmdObj.form == "box" && cmdObj.size == "small" &&
+                            locObj.size == "small" && (locObj.form == "brick" || locObj.form == "pyramid")) ||
+                        (cmdObj.form == "box" && cmdObj.size == "large" &&
+                            locObj.form == "pyramid" && locObj.size == "large")) {
                         return false;
                     }
                     break;
@@ -273,15 +328,15 @@ module Interpreter {
         var cmdEntity: Parser.Entity = cmd.entity;
         var cmdLoc: Parser.Location = cmd.location;
 
-        var cmdDefs: string[] = [];
-        var locDefs: string[] = [];
+        var cmdObjIds: string[] = [];
+        var locObjIds: string[] = [];
 
         if (cmdEntity != null) {
-            cmdDefs = getValidObjectIds(cmdEntity);
+            cmdObjIds = getValidObjectIds(cmdEntity);
         }
 
         if (cmdLoc != null) {
-            locDefs = getValidObjectIds(cmdLoc.entity);
+            locObjIds = getValidObjectIds(cmdLoc.entity);
         }
 
         var interpretation: DNFFormula = [];
@@ -295,14 +350,14 @@ module Interpreter {
 
         // Construct the goal interpretations/literals given the relation and object identifiers
         if (relation == "holding") {
-            for (var i = 0; i < cmdDefs.length; i++) {
-                interpretation.push([{ polarity: true, relation: relation, args: [cmdDefs[i]] }]);
+            for (var i = 0; i < cmdObjIds.length; i++) {
+                interpretation.push([{ polarity: true, relation: relation, args: [cmdObjIds[i]] }]);
             }
         } else if (cmdLoc != null) {
-            for (var i = 0; i < cmdDefs.length; i++) {
-                for (var j = 0; j < locDefs.length; j++) {
-                    if (isValidGoal(relation, cmdDefs[i], locDefs[j])) {
-                        interpretation.push([{ polarity: true, relation: relation, args: [cmdDefs[i], locDefs[j]] }]);
+            for (var i = 0; i < cmdObjIds.length; i++) {
+                for (var j = 0; j < locObjIds.length; j++) {
+                    if (isValidGoal(relation, cmdObjIds[i], locObjIds[j])) {
+                        interpretation.push([{ polarity: true, relation: relation, args: [cmdObjIds[i], locObjIds[j]] }]);
                     }
                 }
 
