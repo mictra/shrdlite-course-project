@@ -62,9 +62,17 @@ module Planner {
             public state: WorldState,
             public command: string) { }
 
-        // TODO: Proper implementation... (Check all the elements in the world state)
         compareTo(other: NodeState): number {
-            return 0;
+            if (this.toString() == other.toString()) {
+                return 0;
+            } else {
+                return -1;
+            }
+
+        }
+
+        toString(): string {
+            return "(" + "[" + this.state.stacks.toString + "]" + ", " + this.state.arm + ", " + this.state.holding + ", " + this.command + ")";
         }
     }
 
@@ -87,8 +95,9 @@ module Planner {
             // To be able to drop, check that the arm is holding something and that inside/ontop is legit
             if (node.state.holding != null) {
                 var holding: string = node.state.holding;
+                //console.log("IM HOLDING: " + holding);
                 var stack: string[] = node.state.stacks[node.state.arm];
-                var topObject: string = stack[stack.length - 1];
+                var topObject: string = ((stack.length) > 0) ? stack[stack.length - 1] : "floor";
 
                 // Using isValidGoal() function in Interpreter to check physical laws
                 if (Interpreter.isValidGoal("inside", node.state, holding, topObject) ||
@@ -158,8 +167,9 @@ module Planner {
     function planInterpretation(interpretation: Interpreter.DNFFormula, state: WorldState): string[] {
         // TODO: Implement a proper heuristics function
         var h = (n: NodeState) => 0;
-        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, h, 10);
+        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, h, 60);
         var plan: string[] = [];
+        console.log("Length of searchResult: " + searchResult.path.length);
 
         for (var i = 0; i < searchResult.path.length; i++) {
             var node: NodeState = searchResult.path[i];
@@ -173,7 +183,6 @@ module Planner {
         function isGoal(node: NodeState): boolean {
             for (var i = 0; i < interpretation.length; i++) {
                 var conjunctionFlag: boolean = true;
-
                 for (var j = 0; j < interpretation[i].length; j++) {
                     if (!isLiteralGoal(interpretation[i][j], node.state)) {
                         conjunctionFlag = false;
@@ -190,12 +199,16 @@ module Planner {
         }
 
         function isLiteralGoal(literal: Interpreter.Literal, state: WorldState): boolean {
+            //console.log("Relation: " + literal.relation);
+            //console.log("!!!!!!!!!!");
+            if (literal.relation == "holding") {
+                return literal.args[0] == state.holding;
+            }
+
             var columnIndex: number = Interpreter.getColumnIndex(literal.args[0], state);
             var stackIndex: number = Interpreter.getStackIndex(literal.args[0], columnIndex, state);
 
             switch (literal.relation) {
-                case "holding":
-                    return literal.args[0] == state.holding;
                 case "inside":
                     if (Interpreter.isInside([literal.args[1]], columnIndex, stackIndex - 1, state)) {
                         return true;

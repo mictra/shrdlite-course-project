@@ -464,8 +464,13 @@ module Interpreter {
         }
 
         // Valid only if it is ontop or above the floor
-        if (bObj == "floor" && (relation == "ontop" || relation == "above")) {
-            return true;
+        if (bObj == "floor") {
+            if (relation == "ontop" || relation == "above") {
+                return true;
+            } else if (relation == "inside") {
+                return false;
+            }
+
         }
 
         var cmdObj: ObjectDefinition = state.objects[aObj];
