@@ -72,12 +72,14 @@ module Planner {
         }
 
         toString(): string {
-            return "(" + "[" + this.state.stacks.toString + "]" + ", " + this.state.arm + ", " + this.state.holding + ", " + this.command + ")";
+            return JSON.stringify(this);
         }
     }
 
     class StateGraph implements Graph<NodeState>{
         outgoingEdges(node: NodeState): Edge<NodeState>[] {
+            console.log("Command for node: " + node.command);
+            console.log(node.toString());
             var outgoing: Edge<NodeState>[] = [];
             var actions: string[] = [];
 
@@ -95,7 +97,6 @@ module Planner {
             // To be able to drop, check that the arm is holding something and that inside/ontop is legit
             if (node.state.holding != null) {
                 var holding: string = node.state.holding;
-                //console.log("IM HOLDING: " + holding);
                 var stack: string[] = node.state.stacks[node.state.arm];
                 var topObject: string = ((stack.length) > 0) ? stack[stack.length - 1] : "floor";
 
@@ -147,14 +148,6 @@ module Planner {
     }
 
     /**
-     * The core planner function. The code here is just a template;
-     * you should rewrite this function entirely. In this template,
-     * the code produces a dummy plan which is not connected to the
-     * argument `interpretation`, but your version of the function
-     * should be such that the resulting plan depends on
-     * `interpretation`.
-     *
-     *
      * @param interpretation The logical interpretation of the user's desired goal. The plan needs to be such that by executing it, the world is put into a state that satisfies this goal.
      * @param state The current world state.
      * @returns Basically, a plan is a
@@ -165,9 +158,7 @@ module Planner {
      * be added using the `push` method.
      */
     function planInterpretation(interpretation: Interpreter.DNFFormula, state: WorldState): string[] {
-        // TODO: Implement a proper heuristics function
-        var h = (n: NodeState) => 0;
-        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, h, 60);
+        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, heuristics, 60);
         var plan: string[] = [];
         console.log("Length of searchResult: " + searchResult.path.length);
 
@@ -198,9 +189,60 @@ module Planner {
             return false;
         }
 
+        function heuristics(node: NodeState): number {
+            var currentCost = Infinity;
+            if (isGoal(node)) {
+                return 0;
+            }
+
+            for (var i = 0; i < interpretation.length; i++) {
+                for (var j = 0; j < interpretation[i].length; j++) {
+                    var literal: Interpreter.Literal = interpretation[i][j];
+                    var hCost: number = Infinity;
+                    switch (literal.relation) {
+                        case "holding":
+                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], node.state));
+                            break;
+                        case "inside":
+                        case "ontop":
+                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 3) +
+                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            break;
+                        case "under":
+                            hCost = (Interpreter.aboveObjects(literal.args[1], state) * 4) +
+                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[1], state));
+                            break;
+                        case "above":
+                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
+                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            break;
+                        case "leftof":
+                        case "rightof":
+                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
+                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            break;
+                        case "beside":
+                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
+                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
+                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state)) - 1;
+                            break;
+                    }
+                }
+
+                if (hCost < currentCost) {
+                    currentCost = hCost;
+                }
+            }
+
+            return currentCost;
+        }
+
         function isLiteralGoal(literal: Interpreter.Literal, state: WorldState): boolean {
-            //console.log("Relation: " + literal.relation);
-            //console.log("!!!!!!!!!!");
             if (literal.relation == "holding") {
                 return literal.args[0] == state.holding;
             }
