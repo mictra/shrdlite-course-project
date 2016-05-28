@@ -9,8 +9,6 @@
 * produced by the Interpreter module and to plan a sequence of actions
 * for the robot to put the world into a state compatible with the
 * user's command, i.e. to achieve what the user wanted.
-*
-* The planner should use your A* search implementation to find a plan.
 */
 module Planner {
 
@@ -78,8 +76,6 @@ module Planner {
 
     class StateGraph implements Graph<NodeState>{
         outgoingEdges(node: NodeState): Edge<NodeState>[] {
-            console.log("Command for node: " + node.command);
-            console.log(node.toString());
             var outgoing: Edge<NodeState>[] = [];
             var actions: string[] = [];
 
@@ -94,7 +90,7 @@ module Planner {
                 actions.push("l");
             }
 
-            // To be able to drop, check that the arm is holding something and that inside/ontop is legit
+            // To be able to drop, check that the arm is holding something and that inside/ontop is valid
             if (node.state.holding != null) {
                 var holding: string = node.state.holding;
                 var stack: string[] = node.state.stacks[node.state.arm];
@@ -109,30 +105,25 @@ module Planner {
 
             for (var i = 0; i < actions.length; i++) {
                 var edge: Edge<NodeState> = new Edge<NodeState>();
+                edge.from = node;
+                edge.cost = 1;
                 // Copy the contents of current WorldState
                 var nextWorldState: WorldState = JSON.parse(JSON.stringify(node.state));
                 if (actions[i] == "p") {
                     nextWorldState.holding = nextWorldState.stacks[nextWorldState.arm].pop();
-                    edge.from = node;
                     edge.to = new NodeState(nextWorldState, "p");
-                    edge.cost = 1;
                     outgoing.push(edge);
                 } else if (actions[i] == "r") {
                     nextWorldState.arm += 1;
-                    edge.from = node;
                     edge.to = new NodeState(nextWorldState, "r");
-                    edge.cost = 1;
                     outgoing.push(edge);
                 } else if (actions[i] == "l") {
                     nextWorldState.arm -= 1;
-                    edge.from = node;
                     edge.to = new NodeState(nextWorldState, "l");
-                    edge.cost = 1;
                     outgoing.push(edge);
                 } else if (actions[i] == "d") {
                     nextWorldState.stacks[nextWorldState.arm].push(nextWorldState.holding);
                     nextWorldState.holding = null;
-                    edge.from = node;
                     edge.to = new NodeState(nextWorldState, "d");
                     outgoing.push(edge);
                 }
@@ -158,9 +149,8 @@ module Planner {
      * be added using the `push` method.
      */
     function planInterpretation(interpretation: Interpreter.DNFFormula, state: WorldState): string[] {
-        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, heuristics, 60);
+        var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(), new NodeState(state, null), isGoal, heuristics, 10);
         var plan: string[] = [];
-        console.log("Length of searchResult: " + searchResult.path.length);
 
         for (var i = 0; i < searchResult.path.length; i++) {
             var node: NodeState = searchResult.path[i];
@@ -190,46 +180,40 @@ module Planner {
         }
 
         function heuristics(node: NodeState): number {
-            var currentCost = Infinity;
             if (isGoal(node)) {
                 return 0;
             }
+            var currentCost = Infinity;
 
             for (var i = 0; i < interpretation.length; i++) {
                 for (var j = 0; j < interpretation[i].length; j++) {
                     var literal: Interpreter.Literal = interpretation[i][j];
                     var hCost: number = Infinity;
+                    var nrObjectsAbove = (index: number): number => Interpreter.aboveObjects(literal.args[index], state);
+                    var armToTarget = (index: number): number => Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[index], node.state));
+                    // This value (distBtwObjs) might be bad, i.e. null/undefined if "holding" is the case, but it isn't used in that case
+                    var distBtwObjs: number = Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state));
+
                     switch (literal.relation) {
                         case "holding":
-                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], node.state));
+                            hCost = (nrObjectsAbove(0) * 4) + armToTarget(0);
                             break;
                         case "inside":
                         case "ontop":
-                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 3) +
-                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            hCost = (nrObjectsAbove(0) * 3) + distBtwObjs + armToTarget(0);
                             break;
                         case "under":
-                            hCost = (Interpreter.aboveObjects(literal.args[1], state) * 4) +
-                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[1], state));
+                            hCost = (nrObjectsAbove(1) * 4) + distBtwObjs + armToTarget(1);
                             break;
                         case "above":
-                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
-                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            hCost = (nrObjectsAbove(0) * 4) + distBtwObjs + armToTarget(0);
                             break;
                         case "leftof":
                         case "rightof":
-                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
-                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state));
+                            hCost = (nrObjectsAbove(0) * 4) + distBtwObjs + armToTarget(0);
                             break;
                         case "beside":
-                            hCost = (Interpreter.aboveObjects(literal.args[0], state) * 4) +
-                            Math.abs(Interpreter.getColumnIndex(literal.args[0], state) - Interpreter.getColumnIndex(literal.args[1], state)) +
-                            Math.abs(node.state.arm - Interpreter.getColumnIndex(literal.args[0], state)) - 1;
+                            hCost = (nrObjectsAbove(0) * 4) + distBtwObjs + armToTarget(0) - 1;
                             break;
                     }
                 }
@@ -248,6 +232,11 @@ module Planner {
             }
 
             var columnIndex: number = Interpreter.getColumnIndex(literal.args[0], state);
+            // TODO: Check for more cases like these and handle all null/undefined values?
+            if (columnIndex == null) {
+                return false;
+            }
+            // Might be null if columnIndex is null (which is the case when looking for an object the robot is already holding)
             var stackIndex: number = Interpreter.getStackIndex(literal.args[0], columnIndex, state);
 
             switch (literal.relation) {

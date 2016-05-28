@@ -290,14 +290,14 @@ module Interpreter {
         return null;
     }
 
-    /*
+    /**
      * Returns the amount of objects above the given object in the given WorldState.
      */
     export function aboveObjects(objId: string, state: WorldState): number {
         for (var i = 0; i < state.stacks.length; i++) {
             for (var j = 0; j < state.stacks[i].length; j++) {
                 if (objId == state.stacks[i][j]) {
-                    return j;
+                    return Math.abs(j - state.stacks[i].length) - 1;
                 }
             }
         }
