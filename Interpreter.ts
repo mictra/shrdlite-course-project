@@ -134,7 +134,7 @@ module Interpreter {
         } else if (cmd.command == "move") {
             for (var i = 0; i < cmdObjIds.length; i++) {
                 for (var j = 0; j < locObjIds.length; j++) {
-                    if (isValidGoal(cmdLoc.relation, state, cmdObjIds[i], locObjIds[j])) {
+                    if (isValidGoal(cmdLoc.relation, state.objects, cmdObjIds[i], locObjIds[j])) {
                         interpretation.push([{ polarity: true, relation: cmdLoc.relation, args: [cmdObjIds[i], locObjIds[j]] }]);
                     }
                 }
@@ -142,7 +142,7 @@ module Interpreter {
         } else if (cmd.command == "put") {
             var holding: string = state.holding;
             for (var i = 0; i < locObjIds.length; i++) {
-                if (isValidGoal(cmdLoc.relation, state, holding, locObjIds[i])) {
+                if (isValidGoal(cmdLoc.relation, state.objects, holding, locObjIds[i])) {
                     interpretation.push([{ polarity: true, relation: cmdLoc.relation, args: [holding, locObjIds[i]] }]);
                 }
             }
@@ -186,42 +186,42 @@ module Interpreter {
                 var relatives: string[] = getValidObjectIds(relativeObjLoc.entity.object);
 
                 for (var n = 0; n < objects.length; n++) {
-                    var i: number = getColumnIndex(objects[n], state);
-                    var j: number = getStackIndex(objects[n], i, state);
+                    var i: number = getColumnIndex(objects[n], state.stacks);
+                    var j: number = getStackIndex(objects[n], i, state.stacks);
 
                     switch (relativeObjLoc.relation) {
                         case "leftof":
-                            if (!isLeftOf(relatives, i, state)) {
+                            if (!isLeftOf(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "rightof":
-                            if (!isRightOf(relatives, i, state)) {
+                            if (!isRightOf(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "beside":
-                            if (!isBeside(relatives, i, state)) {
+                            if (!isBeside(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "inside":
-                            if (!isInside(relatives, i, j - 1, state)) {
+                            if (!isInside(relatives, i, j - 1, state.stacks, state.objects)) {
                                 continue;
                             }
                             break;
                         case "ontop":
-                            if (!isOnTop(relatives, i, j - 1, state)) {
+                            if (!isOnTop(relatives, i, j - 1, state.stacks, state.objects)) {
                                 continue;
                             }
                             break;
                         case "above":
-                            if (!isAbove(relatives, i, j, state)) {
+                            if (!isAbove(relatives, i, j, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "under":
-                            if (!isUnder(relatives, i, j + 1, state)) {
+                            if (!isUnder(relatives, i, j + 1, state.stacks)) {
                                 continue;
                             }
                             break;
@@ -264,10 +264,10 @@ module Interpreter {
      * Returns the stack column index (position of the stack in the world state),
      * given the object identifier.
      */
-    export function getColumnIndex(objId: string, state: WorldState): number {
-        for (var i = 0; i < state.stacks.length; i++) {
-            for (var j = 0; j < state.stacks[i].length; j++) {
-                if (objId == state.stacks[i][j]) {
+    export function getColumnIndex(objId: string, stacks: Stack[]): number {
+        for (var i = 0; i < stacks.length; i++) {
+            for (var j = 0; j < stacks[i].length; j++) {
+                if (objId == stacks[i][j]) {
                     return i;
                 }
             }
@@ -280,9 +280,9 @@ module Interpreter {
      * Returns the stack index (position in the stack),
      * given the object identifier and its stack column index.
      */
-    export function getStackIndex(objId: string, i: number, state: WorldState): number {
-        for (var j = 0; j < state.stacks[i].length; j++) {
-            if (objId == state.stacks[i][j]) {
+    export function getStackIndex(objId: string, i: number, stacks: Stack[]): number {
+        for (var j = 0; j < stacks[i].length; j++) {
+            if (objId == stacks[i][j]) {
                 return j;
             }
         }
@@ -293,11 +293,11 @@ module Interpreter {
     /**
      * Returns the amount of objects above the given object in the given WorldState.
      */
-    export function aboveObjects(objId: string, state: WorldState): number {
-        for (var i = 0; i < state.stacks.length; i++) {
-            for (var j = 0; j < state.stacks[i].length; j++) {
-                if (objId == state.stacks[i][j]) {
-                    return Math.abs(j - state.stacks[i].length) - 1;
+    export function aboveObjects(objId: string, stacks: Stack[]): number {
+        for (var i = 0; i < stacks.length; i++) {
+            for (var j = 0; j < stacks[i].length; j++) {
+                if (objId == stacks[i][j]) {
+                    return Math.abs(j - stacks[i].length) - 1;
                 }
             }
         }
@@ -305,12 +305,12 @@ module Interpreter {
         return 0;
     }
 
-    export function isLeftOf(objIds: string[], i: number, state: WorldState): boolean {
+    export function isLeftOf(objIds: string[], i: number, stacks: Stack[]): boolean {
         if (i + 1 >= 0) {
             for (var k = 0; k < objIds.length; k++) {
-                for (var n = i + 1; n < state.stacks.length; n++) {
-                    for (var j = 0; j < state.stacks[n].length; j++) {
-                        if (objIds[k] == state.stacks[n][j]) {
+                for (var n = i + 1; n < stacks.length; n++) {
+                    for (var j = 0; j < stacks[n].length; j++) {
+                        if (objIds[k] == stacks[n][j]) {
                             return true;
                         }
                     }
@@ -321,12 +321,12 @@ module Interpreter {
         return false;
     }
 
-    export function isRightOf(objIds: string[], i: number, state: WorldState): boolean {
+    export function isRightOf(objIds: string[], i: number, stacks: Stack[]): boolean {
         if (i >= 0) {
             for (var k = 0; k < objIds.length; k++) {
                 for (var n = 0; n < i; n++) {
-                    for (var j = 0; j < state.stacks[n].length; j++) {
-                        if (objIds[k] == state.stacks[n][j]) {
+                    for (var j = 0; j < stacks[n].length; j++) {
+                        if (objIds[k] == stacks[n][j]) {
                             return true;
                         }
                     }
@@ -342,11 +342,11 @@ module Interpreter {
      * from the array is beside (left or right) the stack.
      *
      */
-    export function isBeside(objIds: string[], i: number, state: WorldState): boolean {
+    export function isBeside(objIds: string[], i: number, stacks: Stack[]): boolean {
         if (i - 1 >= 0) {
             for (var n = 0; n < objIds.length; n++) {
-                for (var j = 0; j < state.stacks[i - 1].length; j++) {
-                    if (objIds[n] == state.stacks[i - 1][j]) {
+                for (var j = 0; j < stacks[i - 1].length; j++) {
+                    if (objIds[n] == stacks[i - 1][j]) {
                         return true;
                     }
                 }
@@ -355,8 +355,8 @@ module Interpreter {
 
         if (i + 1 >= 0) {
             for (var n = 0; n < objIds.length; n++) {
-                for (var j = 0; j < state.stacks[i + 1].length; j++) {
-                    if (objIds[n] == state.stacks[i + 1][j]) {
+                for (var j = 0; j < stacks[i + 1].length; j++) {
+                    if (objIds[n] == stacks[i + 1][j]) {
                         return true;
                     }
                 }
@@ -371,7 +371,7 @@ module Interpreter {
      * from the array is directly under it in the same stack,
      * and only if it is a box.
      */
-    export function isInside(objIds: string[], i: number, j: number, state: WorldState): boolean {
+    export function isInside(objIds: string[], i: number, j: number, stacks: Stack[], objects: { [s: string]: ObjectDefinition; }): boolean {
         // Objects can not be inside floor
         if (objIds[0] == "floor") {
             return false;
@@ -379,10 +379,10 @@ module Interpreter {
 
         if (i >= 0 && j >= 0) {
             for (var n = 0; n < objIds.length; n++) {
-                if (state.objects[objIds[n]].form != "box") {
+                if (objects[objIds[n]].form != "box") {
                     // Objects can only be inside boxes
                     continue;
-                } else if (objIds[n] == state.stacks[i][j]) {
+                } else if (objIds[n] == stacks[i][j]) {
                     return true;
                 }
             }
@@ -396,7 +396,7 @@ module Interpreter {
      * from the array is directly under it in the same stack.
      * Does not work for boxes or balls (according to the physical laws).
      */
-    export function isOnTop(objIds: string[], i: number, j: number, state: WorldState): boolean {
+    export function isOnTop(objIds: string[], i: number, j: number, stacks: Stack[], objects: { [s: string]: ObjectDefinition; }): boolean {
         // If ontop of floor is being checked, then it has to be at the bottom of the stack
         if (objIds[0] == "floor") {
             if (j < 0) {
@@ -409,10 +409,10 @@ module Interpreter {
 
         if (i >= 0 && j >= 0) {
             for (var n = 0; n < objIds.length; n++) {
-                if (state.objects[objIds[n]].form == "box" || state.objects[objIds[n]].form == "ball") {
+                if (objects[objIds[n]].form == "box" || objects[objIds[n]].form == "ball") {
                     // Objects can not be supported by balls or be ontop of boxes
                     continue;
-                } else if (objIds[n] == state.stacks[i][j]) {
+                } else if (objIds[n] == stacks[i][j]) {
                     return true;
                 }
             }
@@ -425,7 +425,7 @@ module Interpreter {
      * Helper function, returns true if any object identifiers
      * from the array is somewhere under the "commanded" object in the stack.
      */
-    export function isAbove(objIds: string[], i: number, j: number, state: WorldState): boolean {
+    export function isAbove(objIds: string[], i: number, j: number, stacks: Stack[]): boolean {
         // Every object is above the floor (except the floor itself)
         if (objIds[0] == "floor") {
             return true;
@@ -433,7 +433,7 @@ module Interpreter {
 
         for (var n = 0; n < objIds.length; n++) {
             for (var k = 0; k < j; k++) {
-                if (objIds[n] == state.stacks[i][k]) {
+                if (objIds[n] == stacks[i][k]) {
                     return true;
                 }
             }
@@ -446,15 +446,15 @@ module Interpreter {
      * Helper function, returns true if any object identifiers
      * from the array is somewhere above the "commanded" object in the stack.
      */
-    export function isUnder(objIds: string[], i: number, j: number, state: WorldState): boolean {
+    export function isUnder(objIds: string[], i: number, j: number, stacks: Stack[]): boolean {
         // Object can not be under the floor
         if (objIds[0] == "floor") {
             return false;
         }
 
         for (var n = 0; n < objIds.length; n++) {
-            for (var k = j; k < state.stacks[i].length; k++) {
-                if (objIds[n] == state.stacks[i][k]) {
+            for (var k = j; k < stacks[i].length; k++) {
+                if (objIds[n] == stacks[i][k]) {
                     return true;
                 }
             }
@@ -467,7 +467,7 @@ module Interpreter {
      * Checks if the possible goal is valid, given two object identifiers and their relation.
      * Returns a boolean according to the physical laws given for the placement and movements of objects.
      */
-    export function isValidGoal(relation: string, state: WorldState, aObj: string, bObj: string): boolean {
+    export function isValidGoal(relation: string, objDefs: { [s: string]: ObjectDefinition; }, aObj: string, bObj: string): boolean {
         // Can not be the same object (can not have relation to itself)
         if (aObj == bObj) {
             return false;
@@ -488,8 +488,8 @@ module Interpreter {
 
         }
 
-        var cmdObj: ObjectDefinition = state.objects[aObj];
-        var locObj: ObjectDefinition = state.objects[bObj];
+        var cmdObj: ObjectDefinition = objDefs[aObj];
+        var locObj: ObjectDefinition = objDefs[bObj];
 
         switch (relation) {
             case "inside":
