@@ -3,12 +3,12 @@
 
 /**
 * Interpreter module
-* 
+*
 * The goal of the Interpreter module is to interpret a sentence
 * written by the user in the context of the current world state. In
 * particular, it must figure out which objects in the world,
 * i.e. which elements in the `objects` field of WorldState, correspond
-* to the ones referred to in the sentence. 
+* to the ones referred to in the sentence.
 *
 * Moreover, it has to derive what the intended goal state is and
 * return it as a logical formula described in terms of literals, where
@@ -76,7 +76,7 @@ module Interpreter {
         polarity: boolean;
         /** The name of the relation in question. */
         relation: string;
-        /** The arguments to the relation. Usually these will be either objects 
+        /** The arguments to the relation. Usually these will be either objects
          * or special strings such as "floor" or "floor-N" (where N is a column) */
         args: string[];
     }
@@ -134,7 +134,7 @@ module Interpreter {
         } else if (cmd.command == "move") {
             for (var i = 0; i < cmdObjIds.length; i++) {
                 for (var j = 0; j < locObjIds.length; j++) {
-                    if (isValidGoal(cmdLoc.relation, cmdObjIds[i], locObjIds[j])) {
+                    if (isValidGoal(cmdLoc.relation, state.objects, cmdObjIds[i], locObjIds[j])) {
                         interpretation.push([{ polarity: true, relation: cmdLoc.relation, args: [cmdObjIds[i], locObjIds[j]] }]);
                     }
                 }
@@ -142,7 +142,7 @@ module Interpreter {
         } else if (cmd.command == "put") {
             var holding: string = state.holding;
             for (var i = 0; i < locObjIds.length; i++) {
-                if (isValidGoal(cmdLoc.relation, holding, locObjIds[i])) {
+                if (isValidGoal(cmdLoc.relation, state.objects, holding, locObjIds[i])) {
                     interpretation.push([{ polarity: true, relation: cmdLoc.relation, args: [holding, locObjIds[i]] }]);
                 }
             }
@@ -186,42 +186,42 @@ module Interpreter {
                 var relatives: string[] = getValidObjectIds(relativeObjLoc.entity.object);
 
                 for (var n = 0; n < objects.length; n++) {
-                    var i: number = getColumnIndex(objects[n]);
-                    var j: number = getStackIndex(objects[n], i);
+                    var i: number = getColumnIndex(objects[n], state.stacks);
+                    var j: number = getStackIndex(objects[n], i, state.stacks);
 
                     switch (relativeObjLoc.relation) {
                         case "leftof":
-                            if (!isLeftOf(relatives, i)) {
+                            if (!isLeftOf(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "rightof":
-                            if (!isRightOf(relatives, i)) {
+                            if (!isRightOf(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "beside":
-                            if (!isBeside(relatives, i)) {
+                            if (!isBeside(relatives, i, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "inside":
-                            if (!isInside(relatives, i, j - 1)) {
+                            if (!isInside(relatives, i, j - 1, state.stacks, state.objects)) {
                                 continue;
                             }
                             break;
                         case "ontop":
-                            if (!isOnTop(relatives, i, j - 1)) {
+                            if (!isOnTop(relatives, i, j - 1, state.stacks, state.objects)) {
                                 continue;
                             }
                             break;
                         case "above":
-                            if (!isAbove(relatives, i, j)) {
+                            if (!isAbove(relatives, i, j, state.stacks)) {
                                 continue;
                             }
                             break;
                         case "under":
-                            if (!isUnder(relatives, i, j + 1)) {
+                            if (!isUnder(relatives, i, j + 1, state.stacks)) {
                                 continue;
                             }
                             break;
@@ -253,249 +253,280 @@ module Interpreter {
                         objIds.push(objId);
                     }
                 }
+                
+                // If the arm is holding something and matches the description
+                if (state.holding != null) {
+                    var holdingObj: ObjectDefinition = state.objects[state.holding];
+
+                    if ((anyForm || holdingObj.form == obj.form) &&
+                        (anyColor || holdingObj.color == obj.color) &&
+                        (anySize || holdingObj.size == obj.size)) {
+                        objIds.push(state.holding);
+                    }
+                }
             }
 
             return objIds;
         }
 
-        /**
-         * Returns the stack column index (position of the stack in the world state), 
-         * given the object identifier.
-         */
-        function getColumnIndex(objId: string): number {
-            for (var i = 0; i < state.stacks.length; i++) {
-                for (var j = 0; j < state.stacks[i].length; j++) {
-                    if (objId == state.stacks[i][j]) {
-                        return i;
-                    }
+    }
+
+    /**
+     * Returns the stack column index (position of the stack in the world state),
+     * given the object identifier.
+     */
+    export function getColumnIndex(objId: string, stacks: Stack[]): number {
+        for (var i = 0; i < stacks.length; i++) {
+            for (var j = 0; j < stacks[i].length; j++) {
+                if (objId == stacks[i][j]) {
+                    return i;
                 }
             }
-
-            return null;
         }
 
-        /**
-         * Returns the stack index (position in the stack), 
-         * given the object identifier and its stack column index.
-         */
-        function getStackIndex(objId: string, i: number): number {
-            for (var j = 0; j < state.stacks[i].length; j++) {
-                if (objId == state.stacks[i][j]) {
-                    return j;
+        return null;
+    }
+
+    /**
+     * Returns the stack index (position in the stack),
+     * given the object identifier and its stack column index.
+     */
+    export function getStackIndex(objId: string, i: number, stacks: Stack[]): number {
+        for (var j = 0; j < stacks[i].length; j++) {
+            if (objId == stacks[i][j]) {
+                return j;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the amount of objects above the given object in the given WorldState.
+     */
+    export function aboveObjects(objId: string, stacks: Stack[]): number {
+        for (var i = 0; i < stacks.length; i++) {
+            for (var j = 0; j < stacks[i].length; j++) {
+                if (objId == stacks[i][j]) {
+                    return Math.abs(j - stacks[i].length) - 1;
                 }
             }
-
-            return null;
         }
 
-        function isLeftOf(objIds: string[], i: number): boolean {
-            if (i + 1 >= 0) {
-                for (var k = 0; k < objIds.length; k++) {
-                    for (var n = i + 1; n < state.stacks.length; n++) {
-                        for (var j = 0; j < state.stacks[n].length; j++) {
-                            if (objIds[k] == state.stacks[n][j]) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
+        return 0;
+    }
 
-            return false;
-        }
-
-        function isRightOf(objIds: string[], i: number): boolean {
-            if (i >= 0) {
-                for (var k = 0; k < objIds.length; k++) {
-                    for (var n = 0; n < i; n++) {
-                        for (var j = 0; j < state.stacks[n].length; j++) {
-                            if (objIds[k] == state.stacks[n][j]) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /**
-         * Helper function, returns true if any object identifiers
-         * from the array is beside (left or right) the stack.
-         * 
-         */
-        function isBeside(objIds: string[], i: number): boolean {
-            if (i - 1 >= 0) {
-                for (var n = 0; n < objIds.length; n++) {
-                    for (var j = 0; j < state.stacks[i - 1].length; j++) {
-                        if (objIds[n] == state.stacks[i - 1][j]) {
+    export function isLeftOf(objIds: string[], i: number, stacks: Stack[]): boolean {
+        if (i + 1 >= 0) {
+            for (var k = 0; k < objIds.length; k++) {
+                for (var n = i + 1; n < stacks.length; n++) {
+                    for (var j = 0; j < stacks[n].length; j++) {
+                        if (objIds[k] == stacks[n][j]) {
                             return true;
                         }
                     }
                 }
             }
+        }
 
-            if (i + 1 >= 0) {
-                for (var n = 0; n < objIds.length; n++) {
-                    for (var j = 0; j < state.stacks[i + 1].length; j++) {
-                        if (objIds[n] == state.stacks[i + 1][j]) {
+        return false;
+    }
+
+    export function isRightOf(objIds: string[], i: number, stacks: Stack[]): boolean {
+        if (i >= 0) {
+            for (var k = 0; k < objIds.length; k++) {
+                for (var n = 0; n < i; n++) {
+                    for (var j = 0; j < stacks[n].length; j++) {
+                        if (objIds[k] == stacks[n][j]) {
                             return true;
                         }
                     }
                 }
             }
-
-            return false;
         }
 
-        /**
-         * Helper function, returns true if any object identifiers
-         * from the array is directly under it in the same stack, 
-         * and only if it is a box.
-         */
-        function isInside(objIds: string[], i: number, j: number): boolean {
-            // Objects can not be inside floor
-            if (objIds[0] == "floor") {
-                return false;
-            }
+        return false;
+    }
 
-            if (i >= 0 && j >= 0) {
-                for (var n = 0; n < objIds.length; n++) {
-                    if (state.objects[objIds[n]].form != "box") {
-                        // Objects can only be inside boxes
-                        continue;
-                    } else if (objIds[n] == state.stacks[i][j]) {
+    /**
+     * Helper function, returns true if any object identifiers
+     * from the array is beside (left or right) the stack.
+     *
+     */
+    export function isBeside(objIds: string[], i: number, stacks: Stack[]): boolean {
+        if (i - 1 >= 0) {
+            for (var n = 0; n < objIds.length; n++) {
+                for (var j = 0; j < stacks[i - 1].length; j++) {
+                    if (objIds[n] == stacks[i - 1][j]) {
                         return true;
                     }
                 }
             }
+        }
 
+        if (i + 1 >= 0) {
+            for (var n = 0; n < objIds.length; n++) {
+                for (var j = 0; j < stacks[i + 1].length; j++) {
+                    if (objIds[n] == stacks[i + 1][j]) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Helper function, returns true if any object identifiers
+     * from the array is directly under it in the same stack,
+     * and only if it is a box.
+     */
+    export function isInside(objIds: string[], i: number, j: number, stacks: Stack[], objects: { [s: string]: ObjectDefinition; }): boolean {
+        // Objects can not be inside floor
+        if (objIds[0] == "floor") {
             return false;
         }
 
-        /**
-         * Helper function, returns true if any object identifiers
-         * from the array is directly under it in the same stack.
-         * Does not work for boxes or balls (according to the physical laws).
-         */
-        function isOnTop(objIds: string[], i: number, j: number): boolean {
-            // If ontop of floor is being checked, then it has to be at the bottom of the stack
-            if (objIds[0] == "floor") {
-                if (j < 0) {
+        if (i >= 0 && j >= 0) {
+            for (var n = 0; n < objIds.length; n++) {
+                if (objects[objIds[n]].form != "box") {
+                    // Objects can only be inside boxes
+                    continue;
+                } else if (objIds[n] == stacks[i][j]) {
                     return true;
-                } else {
-                    return false;
-                }
-
-            }
-
-            if (i >= 0 && j >= 0) {
-                for (var n = 0; n < objIds.length; n++) {
-                    if (state.objects[objIds[n]].form == "box" || state.objects[objIds[n]].form == "ball") {
-                        // Objects can not be supported by balls or be ontop of boxes
-                        continue;
-                    } else if (objIds[n] == state.stacks[i][j]) {
-                        return true;
-                    }
                 }
             }
-
-            return false;
         }
 
-        /**
-         * Helper function, returns true if any object identifiers
-         * from the array is somewhere under the "commanded" object in the stack.
-         */
-        function isAbove(objIds: string[], i: number, j: number): boolean {
-            // Every object is above the floor (except the floor itself)
-            if (objIds[0] == "floor") {
+        return false;
+    }
+
+    /**
+     * Helper function, returns true if any object identifiers
+     * from the array is directly under it in the same stack.
+     * Does not work for boxes or balls (according to the physical laws).
+     */
+    export function isOnTop(objIds: string[], i: number, j: number, stacks: Stack[], objects: { [s: string]: ObjectDefinition; }): boolean {
+        // If ontop of floor is being checked, then it has to be at the bottom of the stack
+        if (objIds[0] == "floor") {
+            if (j < 0) {
                 return true;
+            } else {
+                return false;
             }
 
-            for (var n = 0; n < objIds.length; n++) {
-                for (var k = 0; k < j; k++) {
-                    if (objIds[n] == state.stacks[i][k]) {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
         }
 
-        /**
-         * Helper function, returns true if any object identifiers
-         * from the array is somewhere above the "commanded" object in the stack.
-         */
-        function isUnder(objIds: string[], i: number, j: number): boolean {
-            // Object can not be under the floor
-            if (objIds[0] == "floor") {
-                return false;
-            }
-
+        if (i >= 0 && j >= 0) {
             for (var n = 0; n < objIds.length; n++) {
-                for (var k = j; k < state.stacks[i].length; k++) {
-                    if (objIds[n] == state.stacks[i][k]) {
-                        return true;
-                    }
+                if (objects[objIds[n]].form == "box" || objects[objIds[n]].form == "ball") {
+                    // Objects can not be supported by balls or be ontop of boxes
+                    continue;
+                } else if (objIds[n] == stacks[i][j]) {
+                    return true;
                 }
             }
-
-            return false;
         }
 
-        /**
-         * Checks if the possible goal is valid, given two object identifiers and their relation.
-         * Returns a boolean according to the physical laws given for the placement and movements of objects.
-         */
-        function isValidGoal(relation: string, aObj: string, bObj: string): boolean {
-            // Can not be the same object (can not have relation to itself)
-            if (aObj == bObj) {
-                return false;
-            }
+        return false;
+    }
 
-            // Should not be able to move or put the floor somewhere
-            if (aObj == "floor") {
-                return false;
-            }
-
-            // Valid only if it is ontop or above the floor
-            if (bObj == "floor" && (relation == "ontop" || relation == "above")) {
-                return true;
-            }
-
-            var cmdObj: ObjectDefinition = state.objects[aObj];
-            var locObj: ObjectDefinition = state.objects[bObj];
-
-            switch (relation) {
-                case "inside":
-                    if ((cmdObj.size == "large" && locObj.size == "small") ||
-                        locObj.form != "box" ||
-                        ((cmdObj.form == "pyramid" || cmdObj.form == "plank" || cmdObj.form == "box") &&
-                            cmdObj.size == locObj.size)) {
-                        return false;
-                    }
-                    break;
-                case "ontop":
-                case "above":
-                    if ((cmdObj.form == "ball" && !(locObj.form == "floor") && relation == "ontop") ||
-                        locObj.form == "ball" ||
-                        (cmdObj.size == "large" && locObj.size == "small") ||
-                        (cmdObj.form == "box" && cmdObj.size == "small" &&
-                            locObj.size == "small" && (locObj.form == "brick" || locObj.form == "pyramid")) ||
-                        (cmdObj.form == "box" && cmdObj.size == "large" &&
-                            locObj.form == "pyramid" && locObj.size == "large") ||
-                        (relation == "ontop" && (locObj.form == "ball" || locObj.form == "box"))) {
-                        return false;
-                    }
-                    break;
-            }
-
+    /**
+     * Helper function, returns true if any object identifiers
+     * from the array is somewhere under the "commanded" object in the stack.
+     */
+    export function isAbove(objIds: string[], i: number, j: number, stacks: Stack[]): boolean {
+        // Every object is above the floor (except the floor itself)
+        if (objIds[0] == "floor") {
             return true;
         }
 
+        for (var n = 0; n < objIds.length; n++) {
+            for (var k = 0; k < j; k++) {
+                if (objIds[n] == stacks[i][k]) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Helper function, returns true if any object identifiers
+     * from the array is somewhere above the "commanded" object in the stack.
+     */
+    export function isUnder(objIds: string[], i: number, j: number, stacks: Stack[]): boolean {
+        // Object can not be under the floor
+        if (objIds[0] == "floor") {
+            return false;
+        }
+
+        for (var n = 0; n < objIds.length; n++) {
+            for (var k = j; k < stacks[i].length; k++) {
+                if (objIds[n] == stacks[i][k]) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if the possible goal is valid, given two object identifiers and their relation.
+     * Returns a boolean according to the physical laws given for the placement and movements of objects.
+     */
+    export function isValidGoal(relation: string, objDefs: { [s: string]: ObjectDefinition; }, aObj: string, bObj: string): boolean {
+        // Can not be the same object (can not have relation to itself)
+        if (aObj == bObj) {
+            return false;
+        }
+
+        // Should not be able to move or put the floor somewhere
+        if (aObj == "floor") {
+            return false;
+        }
+
+        // Valid only if it is ontop or above the floor
+        if (bObj == "floor") {
+            if (relation == "ontop" || relation == "above") {
+                return true;
+            } else if (relation == "inside") {
+                return false;
+            }
+
+        }
+
+        var cmdObj: ObjectDefinition = objDefs[aObj];
+        var locObj: ObjectDefinition = objDefs[bObj];
+
+        switch (relation) {
+            case "inside":
+                if ((cmdObj.size == "large" && locObj.size == "small") ||
+                    locObj.form != "box" ||
+                    ((cmdObj.form == "pyramid" || cmdObj.form == "plank" || cmdObj.form == "box") &&
+                        cmdObj.size == locObj.size)) {
+                    return false;
+                }
+                break;
+            case "ontop":
+            case "above":
+                if ((cmdObj.form == "ball" && !(locObj.form == "floor") && relation == "ontop") ||
+                    locObj.form == "ball" ||
+                    (cmdObj.size == "large" && locObj.size == "small") ||
+                    (cmdObj.form == "box" && cmdObj.size == "small" &&
+                        locObj.size == "small" && (locObj.form == "brick" || locObj.form == "pyramid")) ||
+                    (cmdObj.form == "box" && cmdObj.size == "large" &&
+                        locObj.form == "pyramid" && locObj.size == "large") ||
+                    (relation == "ontop" && (locObj.form == "ball" || locObj.form == "box"))) {
+                    return false;
+                }
+                break;
+        }
+
+        return true;
     }
 
 }
