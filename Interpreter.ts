@@ -253,6 +253,17 @@ module Interpreter {
                         objIds.push(objId);
                     }
                 }
+                
+                // If the arm is holding something and matches the description
+                if (state.holding != null) {
+                    var holdingObj: ObjectDefinition = state.objects[state.holding];
+
+                    if ((anyForm || holdingObj.form == obj.form) &&
+                        (anyColor || holdingObj.color == obj.color) &&
+                        (anySize || holdingObj.size == obj.size)) {
+                        objIds.push(state.holding);
+                    }
+                }
             }
 
             return objIds;
