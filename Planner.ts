@@ -255,6 +255,13 @@ module Planner {
         console.log("Number of commands: " + plan.length);
         return plan;
 
+        /**
+         * Creates a description for the currently performed move.
+         * @param node The NodeState holding all information about the current state.
+         * @param isLastInd If it is the last index.
+         * @param cmd The command letter.
+         * @returns the description.
+         */
         function describeMove(node: NodeState, isLastInd: boolean, cmd: string): string {
             var description: string = "";
             if (cmd == "p") {
