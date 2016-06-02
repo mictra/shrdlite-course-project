@@ -55,6 +55,10 @@ module Planner {
     //////////////////////////////////////////////////////////////////////
     // private functions
 
+    /**
+     * NodeState is used to identify a WorldState for the interpreation planning.
+     * The id is used to differentiate between different NodeStates.
+     */
     class NodeState {
         // Identifier for each NodeState
         id: string;
@@ -68,11 +72,11 @@ module Planner {
             this.id = this.stacks + this.holding + this.arm + this.command;
         }
 
+
         compareTo(other: NodeState): number {
             if (this.id == other.id) {
                 return 0;
             }
-
             return -1;
         }
 
@@ -80,13 +84,20 @@ module Planner {
             return this.id;
         }
 
+        /**
+         * This functions checks for a given literal, if its goal state is true.
+         * All possible literal relations if they are fulfilled and thus,
+         * if a part of the overall goal is true.
+         * @param literal The literal for which it is checked if it is fulfilled.
+         * @returns boolean if given literals goal state is fulfilled, returns true.
+         */
         isLiteralGoal(literal: Interpreter.Literal): boolean {
             if (literal.relation == "holding") {
                 return literal.args[0] == this.holding;
             }
 
             var columnIndex: number = Interpreter.getColumnIndex(literal.args[0], this.stacks);
-            // TODO: Check for more cases like these and handle all null/undefined values?
+
             if (columnIndex == null) {
                 return false;
             }
@@ -135,14 +146,18 @@ module Planner {
         }
     }
 
+    /**
+     * The StateGraph represents a Graph with NodeStates.
+     */
     class StateGraph implements Graph<NodeState>{
         constructor(
             public objDefs: { [s: string]: ObjectDefinition; }
             ) { }
 
+
         outgoingEdges(node: NodeState): Edge<NodeState>[] {
             var outgoing: Edge<NodeState>[] = [];
-            
+
             // Can pick up
             if (node.holding == null && node.stacks[node.arm].length != 0) {
                 var edge: Edge<NodeState> = new Edge<NodeState>();
@@ -160,7 +175,7 @@ module Planner {
                 edge.cost = 1;
                 edge.to = new NodeState(node.arm + 1, node.holding, this.cloneStacks(node.stacks), "r", node.objDefs);
                 outgoing.push(edge);
-            } 
+            }
             // Can move left
             if (node.arm > 0) {
                 var edge: Edge<NodeState> = new Edge<NodeState>();
@@ -222,9 +237,11 @@ module Planner {
      */
     function planInterpretation(interpretation: Interpreter.DNFFormula, state: WorldState): string[] {
         var startNode: NodeState = new NodeState(state.arm, state.holding, state.stacks, null, state.objects);
+        // A* search is performed
         var searchResult: SearchResult<NodeState> = aStarSearch(new StateGraph(state.objects), startNode, isGoal, heuristics, 30);
         var plan: string[] = [];
 
+        // transforms from the searchResult.path to a plan describing what it is doing.
         for (var i = 0; i < searchResult.path.length; i++) {
             var node: NodeState = searchResult.path[i];
             if (node.command != null) {
@@ -235,8 +252,12 @@ module Planner {
         console.log("Number of commands: " + plan.length);
         return plan;
 
+        /**
+         * Checks if the given NodeState node is a goal state
+         */
         function isGoal(node: NodeState): boolean {
             for (var i = 0; i < interpretation.length; i++) {
+                // Shows, if the whole conjunction evaluates to true.
                 var conjunctionFlag: boolean = true;
                 for (var j = 0; j < interpretation[i].length; j++) {
                     if (!node.isLiteralGoal(interpretation[i][j])) {
@@ -253,10 +274,16 @@ module Planner {
             return false;
         }
 
+        /**
+         * The heuristics function. Takes a NodeState and returns the estimated amount of steps required
+         * to get from the given NodeState to a goal state.
+         */
         function heuristics(node: NodeState): number {
             var currentCost = Infinity;
-            
-            // TODO: hCost position and for-loops wrong somehow? Double check, also try to improve heuristics if possible?
+
+            /**
+             * both for-loops iterate together through all interpretation literals and for each literal
+            */
             for (var i = 0; i < interpretation.length; i++) {
                 var hCost: number = Infinity;
                 for (var j = 0; j < interpretation[i].length; j++) {
@@ -266,7 +293,6 @@ module Planner {
                     }
                     var nrObjectsAbove = (index: number): number => Interpreter.aboveObjects(literal.args[index], node.stacks);
                     var armToTarget = (index: number): number => Math.abs(node.arm - Interpreter.getColumnIndex(literal.args[index], node.stacks));
-                    // This value (distBtwObjs) might be bad, i.e. null/undefined if "holding" is the case, but it isn't used in that case
                     var distBtwObjs: number = Math.abs(Interpreter.getColumnIndex(literal.args[0], node.stacks) - Interpreter.getColumnIndex(literal.args[1], node.stacks));
 
                     switch (literal.relation) {
