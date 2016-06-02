@@ -245,12 +245,50 @@ module Planner {
         for (var i = 0; i < searchResult.path.length; i++) {
             var node: NodeState = searchResult.path[i];
             if (node.command != null) {
+                if (node.command == "p" || node.command == "d") {
+                    plan.push(describeMove(node, i == searchResult.path.length - 1, node.command));
+                }
                 plan.push(node.command);
             }
         }
 
         console.log("Number of commands: " + plan.length);
         return plan;
+
+        function describeMove(node: NodeState, isLastInd: boolean, cmd: string): string {
+            var description: string = "";
+            if (cmd == "p") {
+                if (isLastInd) {
+                    description += "Taking the ";
+                } else {
+                    description += "Moving the ";
+                }
+            } else {
+                description += "Dropping the ";
+            }
+
+            var objDef: ObjectDefinition;
+            if (cmd == "p") {
+                objDef = node.objDefs[node.holding];
+                description += objDef.size + " " + objDef.color + " " + objDef.form;
+            } else {
+                var stack: Stack = node.stacks[node.arm];
+                objDef = node.objDefs[stack[stack.length - 1]];
+                description += objDef.size + " " + objDef.color + " " + objDef.form;
+                if (stack.length == 1) {
+                    description += " on the floor";
+                } else {
+                    var objDef2: ObjectDefinition = node.objDefs[stack[stack.length - 2]];
+                    if (objDef2.form == "box") {
+                        description += " inside the " + objDef2.size + " " + objDef2.color + " " + objDef2.form;
+                    } else {
+                        description += " on top the " + objDef2.size + " " + objDef2.color + " " + objDef2.form;
+                    }
+                }
+            }
+
+            return description;
+        }
 
         /**
          * Checks if the given NodeState node is a goal state
